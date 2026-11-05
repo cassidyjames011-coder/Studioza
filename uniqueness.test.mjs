@@ -95,3 +95,22 @@ test('a sprint deadline returns the questions already checked', async () => {
   assert.equal(events.find(event => event.type === 'result').questions.length, 1);
   assert.ok(!events.some(event => event.type === 'error'));
 });
+
+test('the third approved model can recover from two upstream 503s', async () => {
+  const models = ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.6-flash'];
+  const calls = [];
+  let reserved = 0;
+  const s = sandbox(async url => {
+    calls.push(url.split('/').at(-1).split(':')[0]);
+    return new Response('result', {status: calls.length === 3 ? 200 : 503});
+  });
+  const quota = {reserve: async () => {
+    reserved++;
+    return {allowed: true};
+  }};
+  const {response} = await s.fetchGemini({}, {APPROVED_MODELS: models.join(',')}, quota,
+    new AbortController().signal, 1000);
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, models);
+  assert.equal(reserved, 2);
+});

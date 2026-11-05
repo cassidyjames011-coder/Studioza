@@ -88,7 +88,7 @@ function lengthInstruction(mode,length){
  return 'QUESTION MODE: '+mode+' QUESTION LENGTH: '+length+' TARGET CONFIGURATION: '+JSON.stringify(getQuestionConfig(mode,length))+'. Length means work needed to answer, not prompt word count; never equate short with easy or long with difficult. Preserve the academic level. Maintain four-option MCQs: answer word targets describe equivalent reasoning/working, not option length or a written submission. Theory: conceptual reasoning without required calculations; short is one focused definition or brief explanation, medium explains or compares, long analyses and evaluates related concepts. Practical: scale dependent operations and outputs, supply all required data; operation counts are guidance. Mixed: EVERY question integrates concept and application; weights describe work within each question, not proportions of separate question types. Use scenario/framework application when calculations do not suit the subject. Do not invent unsupported facts, datasets, methods or assumptions. Explanations must teach the required working, interpretation and justified result rather than reward verbosity. If source material cannot support the requested scope, return an empty array rather than silently downgrade; suggest a shorter length. Silently check grounding, all required inputs, calculations, answer uniqueness, workload and task coverage before returning. These requirements override generic depth and word-count guidance.';
 }
 const MODEL = "gemini-3.5-flash-lite";
-const FALLBACK_MODEL = "gemini-3.8-flash";
+const FALLBACK_MODELS = ["gemini-3.8-flash", "gemini-3.6-flash"];
 const GEMINI_TRANSIENT_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 const SPRINT_BUDGET_MS = 80_000;
 const SPRINT_BATCH_TIMEOUT_MS = 35_000;
@@ -246,10 +246,8 @@ function validDocumentQuestion(q, sources) {
 
 
 async function fetchGemini(body, env, quota, signal, timeoutMs) {
-  const models = [MODEL];
-  if (env.APPROVED_MODELS?.split(",").some(model => model.trim() === FALLBACK_MODEL)) {
-    models.push(FALLBACK_MODEL);
-  }
+  const approved = new Set(env.APPROVED_MODELS?.split(",").map(model => model.trim()));
+  const models = [MODEL, ...FALLBACK_MODELS.filter(model => approved.has(model))];
   const requestBody = JSON.stringify(body);
   for (const model of models) {
     signal.throwIfAborted();
@@ -268,7 +266,7 @@ async function fetchGemini(body, env, quota, signal, timeoutMs) {
           signal: attemptSignal
         }
       );
-      if (!response.ok || model === FALLBACK_MODEL) {
+      if (!response.ok || model !== MODEL) {
         console.log(JSON.stringify({event:"gemini-response", model, status:response.status, elapsedMs:Date.now()-started}));
       }
       if (!GEMINI_TRANSIENT_STATUSES.has(response.status) || lastAttempt) {
